@@ -24,19 +24,44 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Build GOAT APK
-        run: gradle assembleDebug
+      - name: Extract Android project
+        id: locate
+        run: |
+          mkdir -p source
+          unzip -q GOAT-Complete-Source-for-GitHub.zip -d source
+          WRAPPER=$(find source -type f -name gradlew -print -quit)
+          if [ -n "$WRAPPER" ]; then
+            DIR=$(dirname "$WRAPPER")
+            chmod +x "$WRAPPER"
+            echo "project_dir=$DIR" >> "$GITHUB_OUTPUT"
+            echo "use_wrapper=true" >> "$GITHUB_OUTPUT"
+          else
+            BUILD=$(find source -type f -name build.gradle.kts -print -quit)
+            if [ -z "$BUILD" ]; then
+              echo "Android project not found"
+              exit 1
+            fi
+            echo "project_dir=$(dirname "$BUILD")" >> "$GITHUB_OUTPUT"
+            echo "use_wrapper=false" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Upload APK
+      - name: Build Debug APK
+        working-directory: ${{ steps.locate.outputs.project_dir }}
+        run: |
+          if [ "${{ steps.locate.outputs.use_wrapper }}" = "true" ]; then
+            ./gradlew assembleDebug
+          else
+            gradle assembleDebug
+          fi
+
+      - name: Upload GOAT APK
         uses: actions/upload-artifact@v4
         with:
-          name: GOAT-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: GOAT-APK
+          path: ${{ steps.locate.outputs.project_dir }}/**/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
